@@ -85,20 +85,35 @@ fn threshold_ms(complexity: f64) -> i64 {
 
 fn load_allow_rules(home: &Path) -> Vec<(String, String)> {
     // Returns vec of (pattern, source_file)
+    // Order: local overrides first, then user, then managed (corp policy)
     let files = [
         (home.join(".claude/settings.local.json"), "settings.local.json"),
         (home.join(".claude/settings.json"), "settings.json"),
+        (home.join(".claude/managed-settings.json"), "managed-settings.json"),
     ];
     let mut rules = Vec::new();
     for (path, label) in &files {
         if let Ok(content) = fs::read_to_string(path) {
             if let Ok(v) = serde_json::from_str::<Value>(&content) {
+                // Explicit allow rules
                 if let Some(allow) = v.get("permissions").and_then(|p| p.get("allow")).and_then(|a| a.as_array()) {
                     for rule in allow {
                         if let Some(s) = rule.as_str() {
                             rules.push((s.to_string(), label.to_string()));
                         }
                     }
+                }
+                // defaultMode: auto-accept acts as a wildcard allow for everything
+                if v.get("defaultMode").and_then(|m| m.as_str()) == Some("auto-accept") {
+                    rules.push(("*(auto-accept mode)".to_string(), label.to_string()));
+                }
+                // sandbox.autoAllowBashIfSandboxed: true auto-allows all Bash when sandboxed
+                if v.get("sandbox")
+                    .and_then(|s| s.get("autoAllowBashIfSandboxed"))
+                    .and_then(|b| b.as_bool())
+                    == Some(true)
+                {
+                    rules.push(("Bash(*) [sandbox autoAllow]".to_string(), label.to_string()));
                 }
             }
         }
@@ -118,7 +133,11 @@ fn match_bypass_rule(tool: &str, input: &str, rules: &[(String, String)]) -> Opt
     None
 }
 
-fn pattern_matches(pattern: &str, tool_call: &str) -> bool {
+fn pattern_matches(pattern: &str, _tool_call: &str) -> bool {
+    // Auto-accept mode sentinel matches everything
+    if pattern.starts_with("*(") { return true; }
+
+    let tool_call = _tool_call;
     if pattern.ends_with("(*)") {
         // e.g. "Bash(*)" — match any Bash call
         let prefix = &pattern[..pattern.len() - 3];
