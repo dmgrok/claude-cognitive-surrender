@@ -11,6 +11,7 @@ const HOOK_MARKER = 'cognitive-surrender';
 
 export function installCommand(hookPath: string) {
   const resolvedHook = hookPath || getDefaultHookPath();
+  const resolvedStatusline = join(dirname(resolvedHook), 'statusline.cjs');
 
   if (!existsSync(resolvedHook)) {
     console.error(chalk.red(`Hook script not found at: ${resolvedHook}`));
@@ -28,17 +29,14 @@ export function installCommand(hookPath: string) {
     }
   }
 
+  // Install hooks
   if (!settings.hooks || typeof settings.hooks !== 'object') {
     settings.hooks = {};
   }
   const hooks = settings.hooks as Record<string, unknown[]>;
 
   const hookCommand = `node ${resolvedHook}`;
-  const hookEntry = {
-    type: 'command',
-    command: hookCommand,
-    timeout: 3,
-  };
+  const hookEntry = { type: 'command', command: hookCommand, timeout: 3 };
 
   let installed = 0;
   for (const event of ['PermissionRequest', 'PreToolUse', 'PostToolUse']) {
@@ -61,15 +59,35 @@ export function installCommand(hookPath: string) {
     }
   }
 
-  if (installed === 0) {
-    console.log(chalk.yellow('Hooks already installed. Nothing to do.'));
+  // Install statusline (only if the built file exists)
+  let statuslineInstalled = false;
+  if (existsSync(resolvedStatusline)) {
+    const existing = settings.statusLine as Record<string, unknown> | undefined;
+    if (!existing?.command || !(existing.command as string).includes(HOOK_MARKER)) {
+      settings.statusLine = {
+        type: 'command',
+        command: `node ${resolvedStatusline}`,
+      };
+      statuslineInstalled = true;
+    }
+  }
+
+  if (installed === 0 && !statuslineInstalled) {
+    console.log(chalk.yellow('Already installed. Nothing to do.'));
     return;
   }
 
   writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + '\n');
-  console.log(chalk.green(`✓ Installed ${installed} hook(s) into ${SETTINGS_PATH}`));
-  console.log(chalk.dim(`  Hook script: ${resolvedHook}`));
-  console.log(chalk.dim('  Restart Claude Code for hooks to take effect.'));
+
+  if (installed > 0) {
+    console.log(chalk.green(`✓ Installed ${installed} hook(s) into ${SETTINGS_PATH}`));
+    console.log(chalk.dim(`  Hook script: ${resolvedHook}`));
+  }
+  if (statuslineInstalled) {
+    console.log(chalk.green(`✓ Installed status line (bottom of chat)`));
+    console.log(chalk.dim(`  Statusline script: ${resolvedStatusline}`));
+  }
+  console.log(chalk.dim('  Restart Claude Code for changes to take effect.'));
 }
 
 export function uninstallCommand() {
@@ -111,13 +129,22 @@ export function uninstallCommand() {
     removed += before - (hooks[event] as unknown[]).length;
   }
 
-  if (removed === 0) {
-    console.log(chalk.dim('No cognitive-surrender hooks found. Nothing to remove.'));
+  // Remove statusline if it's ours
+  let statuslineRemoved = false;
+  const sl = settings.statusLine as Record<string, unknown> | undefined;
+  if (sl && typeof sl.command === 'string' && sl.command.includes(HOOK_MARKER)) {
+    delete settings.statusLine;
+    statuslineRemoved = true;
+  }
+
+  if (removed === 0 && !statuslineRemoved) {
+    console.log(chalk.dim('No cognitive-surrender config found. Nothing to remove.'));
     return;
   }
 
   writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + '\n');
-  console.log(chalk.green(`✓ Removed ${removed} hook group(s) from ${SETTINGS_PATH}`));
+  if (removed > 0) console.log(chalk.green(`✓ Removed ${removed} hook group(s) from ${SETTINGS_PATH}`));
+  if (statuslineRemoved) console.log(chalk.green('✓ Removed status line'));
 }
 
 function getDefaultHookPath(): string {

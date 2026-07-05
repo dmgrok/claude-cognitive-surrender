@@ -11,7 +11,7 @@ export default defineConfig([
     external: ['better-sqlite3'],
   },
   {
-    entry: { hook: 'src/hook.ts' },
+    entry: { hook: 'src/hook.ts', statusline: 'src/statusline.ts' },
     format: ['cjs'],
     target: 'node22',
     clean: false,
