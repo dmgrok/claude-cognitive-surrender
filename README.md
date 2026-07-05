@@ -34,6 +34,16 @@ Three categories of tool call, measured differently:
 
 Stats show the full picture: *"Of 200 tool calls, 150 were bypassed. Of the 50 that asked you, you rubber-stamped 40."*
 
+## Status line
+
+The status line (shown in Claude Code's bottom bar) reports your surrender rate as:
+
+```
+○ session 0/0 reviewed  258 auto  │  ○ today 0/0 reviewed  262 auto  (99% surrender)
+```
+
+The **surrender rate** counts bypasses as surrender — `(rubber_stamped + bypassed) / total`. A session where every prompt was auto-approved shows 100%, not 0%. The dot indicates severity: `●` < 30%, `◐` 30–60%, `○` > 60%.
+
 ## Scoring
 
 **Complexity** is computed per tool call:

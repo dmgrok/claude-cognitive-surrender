@@ -9,7 +9,8 @@ function summarize(counts: Record<string, number>): { reviewed: number; surrende
   const surrendered = counts['rubber_stamped'] ?? 0;
   const auto = counts['bypassed'] ?? 0;
   const prompted = reviewed + surrendered;
-  const surrenderPct = prompted > 0 ? Math.round((surrendered / prompted) * 100) : 0;
+  const total = prompted + auto;
+  const surrenderPct = total > 0 ? Math.round(((surrendered + auto) / total) * 100) : 0;
   return { reviewed, surrendered, auto, prompted, surrenderPct };
 }
 
