@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { openDb, type Decision } from '../db.js';
+import { readDecisions, type Decision } from '../storage.js';
 import { calculateCSI, csiLabel } from '../scoring.js';
 
 interface ToolStat {
@@ -12,14 +12,7 @@ interface ToolStat {
 }
 
 export function statsCommand(days: number) {
-  const db = openDb();
-  const since = Date.now() - days * 24 * 60 * 60 * 1000;
-
-  const decisions = db.prepare(`
-    SELECT * FROM decisions WHERE timestamp_ms >= ? ORDER BY timestamp_ms DESC
-  `).all(since) as Decision[];
-
-  db.close();
+  const decisions = readDecisions({ days });
 
   if (decisions.length === 0) {
     console.log(chalk.dim(`No data for the last ${days} day(s). Run 'cs install' then use Claude Code.`));
@@ -37,7 +30,6 @@ export function statsCommand(days: number) {
   console.log('');
 
   const byTool = groupByTool(decisions);
-
   const header = ['Tool', 'Total', 'Reviewed', 'Rubber-Stamped', 'Bypassed', 'Avg Time'];
   const rows = byTool.map(s => [
     s.tool,
@@ -51,9 +43,9 @@ export function statsCommand(days: number) {
   printTable(header, rows);
 
   const totalHuman = decisions.filter(d => d.verdict !== 'bypassed').length;
-  const totalSurrendered = decisions.filter(d => d.verdict === 'rubber_stamped').length;
-  const totalAuto = decisions.filter(d => d.verdict === 'bypassed').length;
-  const humanTimes = decisions.filter(d => d.decision_time_ms !== null).map(d => d.decision_time_ms!);
+  const totalRubberStamped = decisions.filter(d => d.verdict === 'rubber_stamped').length;
+  const totalBypassed = decisions.filter(d => d.verdict === 'bypassed').length;
+  const humanTimes = decisions.filter(d => d.time_ms !== null).map(d => d.time_ms!);
   const avgTime = humanTimes.length > 0 ? humanTimes.reduce((a, b) => a + b, 0) / humanTimes.length : null;
   const maxTime = humanTimes.length > 0 ? Math.max(...humanTimes) : null;
 
@@ -61,20 +53,41 @@ export function statsCommand(days: number) {
   console.log(
     `  Total: ${decisions.length}  ` +
     `Prompted: ${totalHuman}  ` +
-    chalk.red(`Rubber-stamped: ${totalSurrendered}`) + `  ` +
-    chalk.dim(`Bypassed: ${totalAuto}`)
+    chalk.red(`Rubber-stamped: ${totalRubberStamped}`) + `  ` +
+    chalk.dim(`Bypassed: ${totalBypassed}`)
   );
   if (avgTime !== null) {
     console.log(`  Avg decision time: ${(avgTime / 1000).toFixed(1)}s  Longest: ${maxTime !== null ? (maxTime / 1000).toFixed(1) + 's' : '—'}`);
   }
+
+  // Bypass rules breakdown
+  const bypassRules = new Map<string, number>();
+  for (const d of decisions) {
+    if (d.verdict === 'bypassed' && d.bypass_rule) {
+      bypassRules.set(d.bypass_rule, (bypassRules.get(d.bypass_rule) ?? 0) + 1);
+    }
+  }
+  const unknownBypassed = decisions.filter(d => d.verdict === 'bypassed' && !d.bypass_rule).length;
+
+  if (bypassRules.size > 0 || unknownBypassed > 0) {
+    console.log('');
+    console.log(chalk.dim('  Bypassed by rule:'));
+    const sorted = [...bypassRules.entries()].sort((a, b) => b[1] - a[1]);
+    for (const [rule, count] of sorted) {
+      console.log(`    ${chalk.dim(rule.padEnd(40))} ${count}`);
+    }
+    if (unknownBypassed > 0) {
+      console.log(`    ${chalk.dim('(unknown rule)'.padEnd(40))} ${unknownBypassed}`);
+    }
+  }
+
   console.log('');
 }
 
 function buildCsiBar(csi: number): string {
   const filled = Math.round(csi / 5);
   const empty = 20 - filled;
-  const bar = chalk.red('█'.repeat(filled)) + chalk.dim('░'.repeat(empty));
-  return `[${bar}]`;
+  return `[${chalk.red('█'.repeat(filled))}${chalk.dim('░'.repeat(empty))}]`;
 }
 
 function pct(n: number, total: number): number {
@@ -84,25 +97,20 @@ function pct(n: number, total: number): number {
 
 function groupByTool(decisions: Decision[]): ToolStat[] {
   const map = new Map<string, ToolStat>();
-
   for (const d of decisions) {
-    if (!map.has(d.tool_name)) {
-      map.set(d.tool_name, { tool: d.tool_name, total: 0, reviewed: 0, rubber_stamped: 0, bypassed: 0, avgTimeMs: null });
+    if (!map.has(d.tool)) {
+      map.set(d.tool, { tool: d.tool, total: 0, reviewed: 0, rubber_stamped: 0, bypassed: 0, avgTimeMs: null });
     }
-    const s = map.get(d.tool_name)!;
+    const s = map.get(d.tool)!;
     s.total++;
     if (d.verdict === 'reviewed') s.reviewed++;
     else if (d.verdict === 'rubber_stamped') s.rubber_stamped++;
     else s.bypassed++;
   }
-
   for (const [, s] of map) {
-    const times = decisions
-      .filter(d => d.tool_name === s.tool && d.decision_time_ms !== null)
-      .map(d => d.decision_time_ms!);
+    const times = decisions.filter(d => d.tool === s.tool && d.time_ms !== null).map(d => d.time_ms!);
     s.avgTimeMs = times.length > 0 ? times.reduce((a, b) => a + b, 0) / times.length : null;
   }
-
   return [...map.values()].sort((a, b) => b.rubber_stamped - a.rubber_stamped);
 }
 
@@ -111,12 +119,10 @@ function printTable(headers: string[], rows: string[][]) {
   const colWidths = headers.map((_, i) =>
     Math.max(...allRows.map(r => stripAnsi(r[i] ?? '').length))
   );
-
   const separator = '  ' + colWidths.map(w => '─'.repeat(w)).join('─┼─');
   const fmt = (row: string[], bold = false) =>
     '  ' + row.map((cell, i) => {
-      const plain = stripAnsi(cell);
-      const pad = ' '.repeat(colWidths[i] - plain.length);
+      const pad = ' '.repeat(colWidths[i] - stripAnsi(cell).length);
       return bold ? chalk.bold(cell) + pad : cell + pad;
     }).join(' │ ');
 

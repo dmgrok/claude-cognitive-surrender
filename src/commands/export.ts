@@ -1,12 +1,12 @@
 import { writeFileSync } from 'fs';
 import chalk from 'chalk';
-import { openDb, type Decision } from '../db.js';
+import { readDecisionsAll, type Decision } from '../storage.js';
 
 type Period = 'daily' | 'monthly';
 type Format = 'csv' | 'json' | 'md';
 
 interface PeriodStat {
-  period: string;       // YYYY-MM-DD or YYYY-MM
+  period: string;
   total: number;
   prompted: number;
   reviewed: number;
@@ -18,13 +18,7 @@ interface PeriodStat {
 }
 
 export function exportCommand(period: Period, format: Format, outFile: string | undefined) {
-  const db = openDb();
-
-  const decisions = db.prepare(
-    'SELECT * FROM decisions ORDER BY timestamp_ms ASC'
-  ).all() as Decision[];
-
-  db.close();
+  const decisions = readDecisionsAll();
 
   if (decisions.length === 0) {
     console.log(chalk.dim('No data to export.'));
@@ -33,7 +27,6 @@ export function exportCommand(period: Period, format: Format, outFile: string | 
 
   const grouped = groupByPeriod(decisions, period);
   const stats = grouped.map(([label, rows]) => computeStat(label, rows));
-
   const output = render(stats, format, period);
 
   if (outFile) {
@@ -47,7 +40,7 @@ export function exportCommand(period: Period, format: Format, outFile: string | 
 function groupByPeriod(decisions: Decision[], period: Period): [string, Decision[]][] {
   const map = new Map<string, Decision[]>();
   for (const d of decisions) {
-    const date = new Date(d.timestamp_ms);
+    const date = new Date(d.ts);
     const key = period === 'daily'
       ? `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
       : `${date.getFullYear()}-${pad(date.getMonth() + 1)}`;
@@ -60,36 +53,29 @@ function groupByPeriod(decisions: Decision[], period: Period): [string, Decision
 function computeStat(label: string, rows: Decision[]): PeriodStat {
   const reviewed = rows.filter(d => d.verdict === 'reviewed').length;
   const rubber_stamped = rows.filter(d => d.verdict === 'rubber_stamped').length;
-  const auto = rows.filter(d => d.verdict === 'bypassed').length;
+  const bypassed = rows.filter(d => d.verdict === 'bypassed').length;
   const prompted = reviewed + rubber_stamped;
   const rubber_stamp_pct = prompted > 0 ? Math.round((rubber_stamped / prompted) * 100) : 0;
 
-  const times = rows.filter(d => d.decision_time_ms !== null).map(d => d.decision_time_ms!);
-  const avg_decision_ms = times.length > 0
-    ? Math.round(times.reduce((a, b) => a + b, 0) / times.length)
-    : null;
+  const times = rows.filter(d => d.time_ms !== null).map(d => d.time_ms!);
+  const avg_decision_ms = times.length > 0 ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : null;
 
-  // Simple CSI: weighted surrender rate (no recency decay for exports — flat view per period)
-  let weightedSurr = 0, totalW = 0;
+  let weightedRS = 0, totalW = 0;
   for (const d of rows) {
     if (d.verdict === 'bypassed') continue;
     const w = 0.5 + d.complexity;
     totalW += w;
-    if (d.verdict === 'rubber_stamped') weightedSurr += w;
+    if (d.verdict === 'rubber_stamped') weightedRS += w;
   }
-  const csi = totalW > 0 ? Math.round((weightedSurr / totalW) * 100) : 0;
+  const csi = totalW > 0 ? Math.round((weightedRS / totalW) * 100) : 0;
 
-  return { period: label, total: rows.length, prompted, reviewed, rubber_stamped, bypassed: auto, rubber_stamp_pct, avg_decision_ms, csi };
+  return { period: label, total: rows.length, prompted, reviewed, rubber_stamped, bypassed, rubber_stamp_pct, avg_decision_ms, csi };
 }
 
 function render(stats: PeriodStat[], format: Format, period: Period): string {
-  if (format === 'json') return renderJson(stats);
+  if (format === 'json') return JSON.stringify(stats, null, 2) + '\n';
   if (format === 'csv') return renderCsv(stats);
   return renderMarkdown(stats, period);
-}
-
-function renderJson(stats: PeriodStat[]): string {
-  return JSON.stringify(stats, null, 2) + '\n';
 }
 
 function renderCsv(stats: PeriodStat[]): string {
@@ -102,23 +88,17 @@ function renderCsv(stats: PeriodStat[]): string {
 
 function renderMarkdown(stats: PeriodStat[], period: Period): string {
   const title = period === 'daily' ? 'Daily Report' : 'Monthly Report';
-  const lines: string[] = [
+  const lines = [
     `# Cognitive Surrender — ${title}`,
     '',
     `| Period | Total | Prompted | Reviewed | Rubber-Stamped | Bypassed | Rubber-Stamp% | Avg Time | CSI |`,
     `|--------|------:|---------:|---------:|---------------:|---------:|--------------:|---------:|----:|`,
   ];
-
   for (const s of stats) {
     const avg = s.avg_decision_ms !== null ? `${(s.avg_decision_ms / 1000).toFixed(1)}s` : '—';
-    lines.push(
-      `| ${s.period} | ${s.total} | ${s.prompted} | ${s.reviewed} | ${s.rubber_stamped} | ${s.bypassed} | ${s.rubber_stamp_pct}% | ${avg} | ${s.csi} |`
-    );
+    lines.push(`| ${s.period} | ${s.total} | ${s.prompted} | ${s.reviewed} | ${s.rubber_stamped} | ${s.bypassed} | ${s.rubber_stamp_pct}% | ${avg} | ${s.csi} |`);
   }
-
-  lines.push('');
-  lines.push(`*Generated by cognitive-surrender*`);
-  lines.push('');
+  lines.push('', `*Generated by cognitive-surrender*`, '');
   return lines.join('\n');
 }
 

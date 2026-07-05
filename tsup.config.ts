@@ -8,14 +8,12 @@ export default defineConfig([
     banner: { js: '#!/usr/bin/env node' },
     clean: true,
     sourcemap: true,
-    external: ['better-sqlite3'],
   },
   {
-    entry: { hook: 'src/hook.ts', statusline: 'src/statusline.ts' },
+    entry: { statusline: 'src/statusline.ts' },
     format: ['cjs'],
     target: 'node22',
     clean: false,
     sourcemap: false,
-    noExternal: [/^(?!better-sqlite3).*/],
   },
 ]);

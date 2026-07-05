@@ -1,17 +1,10 @@
 import chalk from 'chalk';
-import { openDb, type Decision } from '../db.js';
+import { readDecisions } from '../storage.js';
 import { calculateCSI } from '../scoring.js';
 import { getProvocation } from '../provocations.js';
 
 export function challengeCommand(days: number) {
-  const db = openDb();
-  const since = Date.now() - days * 24 * 60 * 60 * 1000;
-
-  const decisions = db.prepare(`
-    SELECT * FROM decisions WHERE timestamp_ms >= ? ORDER BY timestamp_ms DESC
-  `).all(since) as Decision[];
-
-  db.close();
+  const decisions = readDecisions({ days });
 
   if (decisions.length === 0) {
     console.log(chalk.dim(`No data for the last ${days} day(s). Run 'cs install' then use Claude Code.`));
@@ -24,22 +17,15 @@ export function challengeCommand(days: number) {
   const reviewed = decisions.filter(d => d.verdict === 'reviewed');
 
   const fastestRubberStamp = rubberStamped.length > 0
-    ? rubberStamped.reduce((a, b) =>
-        (a.decision_time_ms ?? Infinity) < (b.decision_time_ms ?? Infinity) ? a : b)
+    ? rubberStamped.reduce((a, b) => (a.time_ms ?? Infinity) < (b.time_ms ?? Infinity) ? a : b)
     : null;
 
   const toolCounts = new Map<string, number>();
-  for (const d of rubberStamped) {
-    toolCounts.set(d.tool_name, (toolCounts.get(d.tool_name) ?? 0) + 1);
-  }
-  const worstTool = toolCounts.size > 0
-    ? [...toolCounts.entries()].sort((a, b) => b[1] - a[1])[0][0]
-    : null;
+  for (const d of rubberStamped) toolCounts.set(d.tool, (toolCounts.get(d.tool) ?? 0) + 1);
+  const worstTool = toolCounts.size > 0 ? [...toolCounts.entries()].sort((a, b) => b[1] - a[1])[0][0] : null;
 
-  const humanTimes = decisions.filter(d => d.decision_time_ms !== null).map(d => d.decision_time_ms!);
-  const avgTime = humanTimes.length > 0
-    ? humanTimes.reduce((a, b) => a + b, 0) / humanTimes.length
-    : null;
+  const humanTimes = decisions.filter(d => d.time_ms !== null).map(d => d.time_ms!);
+  const avgTime = humanTimes.length > 0 ? humanTimes.reduce((a, b) => a + b, 0) / humanTimes.length : null;
 
   const provocation = getProvocation({
     csi,
@@ -48,11 +34,10 @@ export function challengeCommand(days: number) {
     bypassedCount: bypassed.length,
     reviewedCount: reviewed.length,
     fastestRubberStamp: fastestRubberStamp ? {
-      tool: fastestRubberStamp.tool_name,
-      ms: fastestRubberStamp.decision_time_ms!,
-      summary: fastestRubberStamp.tool_input_summary ?? '',
+      tool: fastestRubberStamp.tool,
+      ms: fastestRubberStamp.time_ms!,
+      summary: fastestRubberStamp.summary ?? '',
     } : null,
-
     worstTool,
     avgDecisionTime: avgTime,
   });
@@ -63,8 +48,7 @@ export function challengeCommand(days: number) {
   console.log(`  ┌${border}┐`);
   console.log(`  │${' '.repeat(width)}│`);
   for (const line of provocation.split('\n')) {
-    const chunks = wrapLine(line, width - 2);
-    for (const chunk of chunks) {
+    for (const chunk of wrapLine(line, width - 2)) {
       const pad = width - 2 - chunk.length;
       console.log(`  │ ${chunk}${' '.repeat(pad)} │`);
     }

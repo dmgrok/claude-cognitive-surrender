@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { computeComplexity, getThresholdMs, classifyVerdict, calculateCSI, csiLabel } from '../src/scoring.js';
-import type { Decision } from '../src/db.js';
+import type { Decision } from '../src/storage.js';
 
 describe('computeComplexity', () => {
   it('assigns high weight to Bash', () => {
@@ -56,32 +56,29 @@ describe('calculateCSI', () => {
     expect(calculateCSI([])).toBe(0);
   });
 
-  it('returns 0 for all auto-approved decisions', () => {
+  it('returns 0 for all bypassed decisions', () => {
     const decisions: Decision[] = [{
-      id: 1, session_id: 's1', timestamp_ms: Date.now(),
-      tool_name: 'Bash', tool_input_summary: 'ls', input_length: 2,
-      decision_time_ms: null, complexity: 0.7, threshold_ms: 4500,
-      verdict: 'bypassed', user: 'test', cwd: null,
+      ts: Date.now(), sid: 's1', tool: 'Bash', summary: 'ls', len: 2,
+      time_ms: null, complexity: 0.7, threshold_ms: 4500,
+      verdict: 'bypassed', user: 'test', cwd: null, bypass_rule: 'Bash(*) in settings.local.json',
     }];
     expect(calculateCSI(decisions)).toBe(0);
   });
 
   it('returns 100 for all rubber_stamped decisions', () => {
     const decisions: Decision[] = Array.from({ length: 5 }, (_, i) => ({
-      id: i, session_id: 's1', timestamp_ms: Date.now() - i * 1000,
-      tool_name: 'Bash', tool_input_summary: 'rm -rf', input_length: 6,
-      decision_time_ms: 500, complexity: 0.7, threshold_ms: 4500,
-      verdict: 'rubber_stamped' as const, user: 'test', cwd: null,
+      ts: Date.now() - i * 1000, sid: 's1', tool: 'Bash', summary: 'rm -rf', len: 6,
+      time_ms: 500, complexity: 0.7, threshold_ms: 4500,
+      verdict: 'rubber_stamped' as const, user: 'test', cwd: null, bypass_rule: null,
     }));
     expect(calculateCSI(decisions)).toBe(100);
   });
 
   it('returns 0 for all reviewed decisions', () => {
     const decisions: Decision[] = Array.from({ length: 5 }, (_, i) => ({
-      id: i, session_id: 's1', timestamp_ms: Date.now() - i * 1000,
-      tool_name: 'Edit', tool_input_summary: 'change x', input_length: 8,
-      decision_time_ms: 8000, complexity: 0.5, threshold_ms: 3500,
-      verdict: 'reviewed' as const, user: 'test', cwd: null,
+      ts: Date.now() - i * 1000, sid: 's1', tool: 'Edit', summary: 'change x', len: 8,
+      time_ms: 8000, complexity: 0.5, threshold_ms: 3500,
+      verdict: 'reviewed' as const, user: 'test', cwd: null, bypass_rule: null,
     }));
     expect(calculateCSI(decisions)).toBe(0);
   });

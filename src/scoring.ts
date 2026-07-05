@@ -1,37 +1,29 @@
-import type { Decision, Verdict } from './db.js';
+import type { Decision, Verdict } from './storage.js';
 
 const TOOL_WEIGHTS: Record<string, number> = {
-  Bash: 0.85,       // shell commands — highest risk, needs real scrutiny
-  Write: 0.75,      // creating files — high risk
-  Edit: 0.65,       // modifying files — moderate-high
+  Bash: 0.85,
+  Write: 0.75,
+  Edit: 0.65,
   MultiEdit: 0.70,
   WebFetch: 0.25,
   WebSearch: 0.15,
-  Read: 0.1,        // reading — low risk
+  Read: 0.10,
   Glob: 0.05,
   Grep: 0.05,
   LS: 0.05,
 };
 
-const CODE_KEYWORDS = /\b(function|class|import|export|const|let|var|def |async |await |return |if\s*\(|for\s*\(|while\s*\()\b/;
+const CODE_KEYWORDS = /\b(function|class|import|export|const |let |def |async |await )\b/;
 
 export function computeComplexity(toolName: string, inputStr: string): number {
-  let score = TOOL_WEIGHTS[toolName] ?? 0.3;
-
-  if (inputStr.length > 500) score += 0.1;
-  if (inputStr.length > 2000) score += 0.1;
-
+  let score = TOOL_WEIGHTS[toolName] ?? 0.30;
+  if (inputStr.length > 500) score += 0.10;
+  if (inputStr.length > 2000) score += 0.10;
   if (CODE_KEYWORDS.test(inputStr)) score += 0.05;
-
   return Math.min(score, 1.0);
 }
 
 export function getThresholdMs(complexity: number): number {
-  // Minimum expected review time scales with complexity:
-  // complexity 0.05 (Grep) →  ~1.3s  — just glance at it
-  // complexity 0.65 (Edit) →  ~4.3s  — actually read the diff
-  // complexity 0.85 (Bash) →  ~5.3s  — read and think about the command
-  // complexity 1.0         →  ~6.0s  — max
   return Math.round(1000 + complexity * 5000);
 }
 
@@ -52,7 +44,7 @@ export function calculateCSI(decisions: Decision[]): number {
   for (const d of decisions) {
     if (d.verdict === 'bypassed') continue;
 
-    const ageMs = now - d.timestamp_ms;
+    const ageMs = now - d.ts;
     const recencyWeight = Math.exp(-ageMs / halfLifeMs);
     const complexityWeight = 0.5 + d.complexity;
     const weight = recencyWeight * complexityWeight;

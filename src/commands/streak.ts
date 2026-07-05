@@ -1,57 +1,43 @@
 import chalk from 'chalk';
-import { openDb, type Decision } from '../db.js';
+import { readDecisions, type Decision } from '../storage.js';
 
 export function streakCommand() {
-  const db = openDb();
-
-  const decisions = db.prepare(`
-    SELECT * FROM decisions ORDER BY timestamp_ms DESC LIMIT 500
-  `).all() as Decision[];
-
-  db.close();
+  const decisions = readDecisions({}).sort((a, b) => b.ts - a.ts).slice(0, 500);
 
   if (decisions.length === 0) {
     console.log(chalk.dim('No data yet. Run "cs install" then use Claude Code.'));
     return;
   }
 
-  // Current streak: consecutive rubber_stamped/bypassed from most recent
   let currentStreak = 0;
   for (const d of decisions) {
     if (d.verdict === 'reviewed') break;
     currentStreak++;
   }
 
-  // Longest streak ever
   let longestStreak = 0;
   let longestStreakStart: number | null = null;
   let run = 0;
   let runStart: number | null = null;
   for (const d of [...decisions].reverse()) {
     if (d.verdict !== 'reviewed') {
-      if (run === 0) runStart = d.timestamp_ms;
+      if (run === 0) runStart = d.ts;
       run++;
-      if (run > longestStreak) {
-        longestStreak = run;
-        longestStreakStart = runStart;
-      }
+      if (run > longestStreak) { longestStreak = run; longestStreakStart = runStart; }
     } else {
-      run = 0;
-      runStart = null;
+      run = 0; runStart = null;
     }
   }
 
-  // Last actual review
   const lastReview = decisions.find(d => d.verdict === 'reviewed');
 
   console.log('');
-
   if (currentStreak === 0) {
-    console.log(chalk.green('  No active surrender streak. You\'re reviewing.'));
+    console.log(chalk.green('  No active rubber-stamp streak. You\'re reviewing.'));
   } else if (currentStreak < 5) {
-    console.log(`  Current streak: ${chalk.yellow(currentStreak)} consecutive rubber stamps`);
+    console.log(`  Current streak: ${chalk.yellow(currentStreak)} consecutive non-reviews`);
   } else {
-    console.log(`  Current streak: ${chalk.red(currentStreak)} consecutive rubber stamps`);
+    console.log(`  Current streak: ${chalk.red(currentStreak)} consecutive non-reviews`);
   }
 
   if (longestStreak > 0 && longestStreakStart) {
@@ -60,16 +46,12 @@ export function streakCommand() {
   }
 
   if (lastReview) {
-    const ago = formatAgo(Date.now() - lastReview.timestamp_ms);
-    const summary = lastReview.tool_input_summary
-      ? lastReview.tool_input_summary.slice(0, 60)
-      : lastReview.tool_name;
-    const timeSpent = lastReview.decision_time_ms
-      ? ` — ${(lastReview.decision_time_ms / 1000).toFixed(1)}s`
-      : '';
+    const ago = formatAgo(Date.now() - lastReview.ts);
+    const summary = (lastReview.summary ?? lastReview.tool).slice(0, 60);
+    const timeSpent = lastReview.time_ms ? ` — ${(lastReview.time_ms / 1000).toFixed(1)}s` : '';
     console.log('');
     console.log(`  Last actual review: ${chalk.dim(ago)}`);
-    console.log(`    ${chalk.dim('→')} ${lastReview.tool_name}: ${chalk.dim(summary)}${chalk.green(timeSpent)}`);
+    console.log(`    ${chalk.dim('→')} ${lastReview.tool}: ${chalk.dim(summary)}${chalk.green(timeSpent)}`);
   }
 
   console.log('');
