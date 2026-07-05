@@ -19,17 +19,17 @@ export function challengeCommand(days: number) {
   }
 
   const csi = calculateCSI(decisions);
-  const surrendered = decisions.filter(d => d.verdict === 'surrendered');
-  const autoApproved = decisions.filter(d => d.verdict === 'auto_approved');
+  const rubberStamped = decisions.filter(d => d.verdict === 'rubber_stamped');
+  const bypassed = decisions.filter(d => d.verdict === 'bypassed');
   const reviewed = decisions.filter(d => d.verdict === 'reviewed');
 
-  const fastestSurrender = surrendered.length > 0
-    ? surrendered.reduce((a, b) =>
+  const fastestRubberStamp = rubberStamped.length > 0
+    ? rubberStamped.reduce((a, b) =>
         (a.decision_time_ms ?? Infinity) < (b.decision_time_ms ?? Infinity) ? a : b)
     : null;
 
   const toolCounts = new Map<string, number>();
-  for (const d of surrendered) {
+  for (const d of rubberStamped) {
     toolCounts.set(d.tool_name, (toolCounts.get(d.tool_name) ?? 0) + 1);
   }
   const worstTool = toolCounts.size > 0
@@ -44,14 +44,15 @@ export function challengeCommand(days: number) {
   const provocation = getProvocation({
     csi,
     totalDecisions: decisions.length,
-    surrenderedCount: surrendered.length,
-    autoApprovedCount: autoApproved.length,
+    rubberStampedCount: rubberStamped.length,
+    bypassedCount: bypassed.length,
     reviewedCount: reviewed.length,
-    fastestSurrender: fastestSurrender ? {
-      tool: fastestSurrender.tool_name,
-      ms: fastestSurrender.decision_time_ms!,
-      summary: fastestSurrender.tool_input_summary ?? '',
+    fastestRubberStamp: fastestRubberStamp ? {
+      tool: fastestRubberStamp.tool_name,
+      ms: fastestRubberStamp.decision_time_ms!,
+      summary: fastestRubberStamp.tool_input_summary ?? '',
     } : null,
+
     worstTool,
     avgDecisionTime: avgTime,
   });

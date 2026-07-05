@@ -6,8 +6,8 @@ interface ToolStat {
   tool: string;
   total: number;
   reviewed: number;
-  surrendered: number;
-  auto_approved: number;
+  rubber_stamped: number;
+  bypassed: number;
   avgTimeMs: number | null;
 }
 
@@ -38,21 +38,21 @@ export function statsCommand(days: number) {
 
   const byTool = groupByTool(decisions);
 
-  const header = ['Tool', 'Total', 'Reviewed', 'Surrendered', 'Auto', 'Avg Time'];
+  const header = ['Tool', 'Total', 'Reviewed', 'Rubber-Stamped', 'Bypassed', 'Avg Time'];
   const rows = byTool.map(s => [
     s.tool,
     String(s.total),
-    `${s.reviewed} (${pct(s.reviewed, s.total - s.auto_approved)}%)`,
-    chalk.red(`${s.surrendered} (${pct(s.surrendered, s.total - s.auto_approved)}%)`),
-    chalk.dim(String(s.auto_approved)),
+    `${s.reviewed} (${pct(s.reviewed, s.total - s.bypassed)}%)`,
+    chalk.red(`${s.rubber_stamped} (${pct(s.rubber_stamped, s.total - s.bypassed)}%)`),
+    chalk.dim(String(s.bypassed)),
     s.avgTimeMs !== null ? `${(s.avgTimeMs / 1000).toFixed(1)}s` : chalk.dim('—'),
   ]);
 
   printTable(header, rows);
 
-  const totalHuman = decisions.filter(d => d.verdict !== 'auto_approved').length;
-  const totalSurrendered = decisions.filter(d => d.verdict === 'surrendered').length;
-  const totalAuto = decisions.filter(d => d.verdict === 'auto_approved').length;
+  const totalHuman = decisions.filter(d => d.verdict !== 'bypassed').length;
+  const totalSurrendered = decisions.filter(d => d.verdict === 'rubber_stamped').length;
+  const totalAuto = decisions.filter(d => d.verdict === 'bypassed').length;
   const humanTimes = decisions.filter(d => d.decision_time_ms !== null).map(d => d.decision_time_ms!);
   const avgTime = humanTimes.length > 0 ? humanTimes.reduce((a, b) => a + b, 0) / humanTimes.length : null;
   const maxTime = humanTimes.length > 0 ? Math.max(...humanTimes) : null;
@@ -61,8 +61,8 @@ export function statsCommand(days: number) {
   console.log(
     `  Total: ${decisions.length}  ` +
     `Prompted: ${totalHuman}  ` +
-    chalk.red(`Surrendered: ${totalSurrendered}`) + `  ` +
-    chalk.dim(`Auto: ${totalAuto}`)
+    chalk.red(`Rubber-stamped: ${totalSurrendered}`) + `  ` +
+    chalk.dim(`Bypassed: ${totalAuto}`)
   );
   if (avgTime !== null) {
     console.log(`  Avg decision time: ${(avgTime / 1000).toFixed(1)}s  Longest: ${maxTime !== null ? (maxTime / 1000).toFixed(1) + 's' : '—'}`);
@@ -87,13 +87,13 @@ function groupByTool(decisions: Decision[]): ToolStat[] {
 
   for (const d of decisions) {
     if (!map.has(d.tool_name)) {
-      map.set(d.tool_name, { tool: d.tool_name, total: 0, reviewed: 0, surrendered: 0, auto_approved: 0, avgTimeMs: null });
+      map.set(d.tool_name, { tool: d.tool_name, total: 0, reviewed: 0, rubber_stamped: 0, bypassed: 0, avgTimeMs: null });
     }
     const s = map.get(d.tool_name)!;
     s.total++;
     if (d.verdict === 'reviewed') s.reviewed++;
-    else if (d.verdict === 'surrendered') s.surrendered++;
-    else s.auto_approved++;
+    else if (d.verdict === 'rubber_stamped') s.rubber_stamped++;
+    else s.bypassed++;
   }
 
   for (const [, s] of map) {
@@ -103,7 +103,7 @@ function groupByTool(decisions: Decision[]): ToolStat[] {
     s.avgTimeMs = times.length > 0 ? times.reduce((a, b) => a + b, 0) / times.length : null;
   }
 
-  return [...map.values()].sort((a, b) => b.surrendered - a.surrendered);
+  return [...map.values()].sort((a, b) => b.rubber_stamped - a.rubber_stamped);
 }
 
 function printTable(headers: string[], rows: string[][]) {

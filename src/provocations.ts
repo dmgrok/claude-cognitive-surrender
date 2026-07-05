@@ -1,36 +1,36 @@
 export interface ProvocationContext {
   csi: number;
   totalDecisions: number;
-  surrenderedCount: number;
-  autoApprovedCount: number;
+  rubberStampedCount: number;
+  bypassedCount: number;
   reviewedCount: number;
-  fastestSurrender: { tool: string; ms: number; summary: string } | null;
+  fastestRubberStamp: { tool: string; ms: number; summary: string } | null;
   worstTool: string | null;
   avgDecisionTime: number | null;
 }
 
 export function getProvocation(ctx: ProvocationContext): string {
-  const { csi, totalDecisions, surrenderedCount, autoApprovedCount, fastestSurrender } = ctx;
-  const human = totalDecisions - autoApprovedCount;
+  const { csi, totalDecisions, rubberStampedCount, bypassedCount, fastestRubberStamp } = ctx;
+  const human = totalDecisions - bypassedCount;
 
   const lines: string[] = [];
 
   lines.push(`You approved ${totalDecisions} tool calls.`);
 
-  if (autoApprovedCount > 0) {
-    const pct = Math.round((autoApprovedCount / totalDecisions) * 100);
-    lines.push(`${autoApprovedCount} (${pct}%) ran without even asking you — your settings waved them through.`);
+  if (bypassedCount > 0) {
+    const pct = Math.round((bypassedCount / totalDecisions) * 100);
+    lines.push(`${bypassedCount} (${pct}%) were bypassed — Claude never even asked you.`);
   }
 
   if (human > 0) {
-    lines.push(`Of the ${human} that actually prompted you, you surrendered on ${surrenderedCount} (${Math.round((surrenderedCount / human) * 100)}%).`);
+    lines.push(`Of the ${human} that actually prompted you, you rubber-stamped ${rubberStampedCount} (${Math.round((rubberStampedCount / human) * 100)}%).`);
   }
 
-  if (fastestSurrender) {
-    const secs = (fastestSurrender.ms / 1000).toFixed(1);
-    lines.push(`\nFastest surrender: a ${fastestSurrender.tool} call in ${secs}s.`);
-    if (fastestSurrender.summary) {
-      lines.push(`  → "${fastestSurrender.summary}"`);
+  if (fastestRubberStamp) {
+    const secs = (fastestRubberStamp.ms / 1000).toFixed(1);
+    lines.push(`\nFastest rubber stamp: a ${fastestRubberStamp.tool} call in ${secs}s.`);
+    if (fastestRubberStamp.summary) {
+      lines.push(`  → "${fastestRubberStamp.summary}"`);
     }
   }
 
@@ -47,7 +47,7 @@ export function getProvocation(ctx: ProvocationContext): string {
     lines.push(`Which ones? Could you say without looking at the log?`);
   } else if (csi >= 30) {
     lines.push(`You're actually pausing. That's rarer than you'd think.`);
-    lines.push(`The surrenders that remain — are they low-risk or just familiar-looking?`);
+    lines.push(`The rubber stamps that remain — are they low-risk or just familiar-looking?`);
   } else {
     lines.push(`You're reading the diffs. Your CSI is ${csi}/100.`);
     lines.push(`The question worth asking: are you slowing things down, or catching things others would miss?`);

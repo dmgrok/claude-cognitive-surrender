@@ -1,13 +1,13 @@
 import type { Decision, Verdict } from './db.js';
 
 const TOOL_WEIGHTS: Record<string, number> = {
-  Bash: 0.7,
-  Write: 0.6,
-  Edit: 0.5,
-  MultiEdit: 0.55,
-  WebFetch: 0.2,
+  Bash: 0.85,       // shell commands — highest risk, needs real scrutiny
+  Write: 0.75,      // creating files — high risk
+  Edit: 0.65,       // modifying files — moderate-high
+  MultiEdit: 0.70,
+  WebFetch: 0.25,
   WebSearch: 0.15,
-  Read: 0.1,
+  Read: 0.1,        // reading — low risk
   Glob: 0.05,
   Grep: 0.05,
   LS: 0.05,
@@ -18,22 +18,27 @@ const CODE_KEYWORDS = /\b(function|class|import|export|const|let|var|def |async 
 export function computeComplexity(toolName: string, inputStr: string): number {
   let score = TOOL_WEIGHTS[toolName] ?? 0.3;
 
-  if (inputStr.length > 500) score += 0.15;
+  if (inputStr.length > 500) score += 0.1;
   if (inputStr.length > 2000) score += 0.1;
 
-  if (CODE_KEYWORDS.test(inputStr)) score += 0.1;
+  if (CODE_KEYWORDS.test(inputStr)) score += 0.05;
 
   return Math.min(score, 1.0);
 }
 
 export function getThresholdMs(complexity: number): number {
+  // Minimum expected review time scales with complexity:
+  // complexity 0.05 (Grep) →  ~1.3s  — just glance at it
+  // complexity 0.65 (Edit) →  ~4.3s  — actually read the diff
+  // complexity 0.85 (Bash) →  ~5.3s  — read and think about the command
+  // complexity 1.0         →  ~6.0s  — max
   return Math.round(1000 + complexity * 5000);
 }
 
 export function classifyVerdict(decisionTimeMs: number | null, complexity: number): Verdict {
-  if (decisionTimeMs === null) return 'auto_approved';
+  if (decisionTimeMs === null) return 'bypassed';
   const threshold = getThresholdMs(complexity);
-  return decisionTimeMs >= threshold ? 'reviewed' : 'surrendered';
+  return decisionTimeMs >= threshold ? 'reviewed' : 'rubber_stamped';
 }
 
 export function calculateCSI(decisions: Decision[]): number {
@@ -41,11 +46,11 @@ export function calculateCSI(decisions: Decision[]): number {
 
   const now = Date.now();
   const halfLifeMs = 7 * 24 * 60 * 60 * 1000;
-  let weightedSurrenders = 0;
+  let weightedRubberStamps = 0;
   let totalWeight = 0;
 
   for (const d of decisions) {
-    if (d.verdict === 'auto_approved') continue;
+    if (d.verdict === 'bypassed') continue;
 
     const ageMs = now - d.timestamp_ms;
     const recencyWeight = Math.exp(-ageMs / halfLifeMs);
@@ -53,11 +58,11 @@ export function calculateCSI(decisions: Decision[]): number {
     const weight = recencyWeight * complexityWeight;
 
     totalWeight += weight;
-    if (d.verdict === 'surrendered') weightedSurrenders += weight;
+    if (d.verdict === 'rubber_stamped') weightedRubberStamps += weight;
   }
 
   if (totalWeight === 0) return 0;
-  return Math.round((weightedSurrenders / totalWeight) * 100);
+  return Math.round((weightedRubberStamps / totalWeight) * 100);
 }
 
 export function csiLabel(csi: number): string {

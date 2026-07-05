@@ -10,9 +10,9 @@ interface PeriodStat {
   total: number;
   prompted: number;
   reviewed: number;
-  surrendered: number;
-  auto_approved: number;
-  surrender_pct: number;
+  rubber_stamped: number;
+  bypassed: number;
+  rubber_stamp_pct: number;
   avg_decision_ms: number | null;
   csi: number;
 }
@@ -59,10 +59,10 @@ function groupByPeriod(decisions: Decision[], period: Period): [string, Decision
 
 function computeStat(label: string, rows: Decision[]): PeriodStat {
   const reviewed = rows.filter(d => d.verdict === 'reviewed').length;
-  const surrendered = rows.filter(d => d.verdict === 'surrendered').length;
-  const auto = rows.filter(d => d.verdict === 'auto_approved').length;
-  const prompted = reviewed + surrendered;
-  const surrender_pct = prompted > 0 ? Math.round((surrendered / prompted) * 100) : 0;
+  const rubber_stamped = rows.filter(d => d.verdict === 'rubber_stamped').length;
+  const auto = rows.filter(d => d.verdict === 'bypassed').length;
+  const prompted = reviewed + rubber_stamped;
+  const rubber_stamp_pct = prompted > 0 ? Math.round((rubber_stamped / prompted) * 100) : 0;
 
   const times = rows.filter(d => d.decision_time_ms !== null).map(d => d.decision_time_ms!);
   const avg_decision_ms = times.length > 0
@@ -72,14 +72,14 @@ function computeStat(label: string, rows: Decision[]): PeriodStat {
   // Simple CSI: weighted surrender rate (no recency decay for exports — flat view per period)
   let weightedSurr = 0, totalW = 0;
   for (const d of rows) {
-    if (d.verdict === 'auto_approved') continue;
+    if (d.verdict === 'bypassed') continue;
     const w = 0.5 + d.complexity;
     totalW += w;
-    if (d.verdict === 'surrendered') weightedSurr += w;
+    if (d.verdict === 'rubber_stamped') weightedSurr += w;
   }
   const csi = totalW > 0 ? Math.round((weightedSurr / totalW) * 100) : 0;
 
-  return { period: label, total: rows.length, prompted, reviewed, surrendered, auto_approved: auto, surrender_pct, avg_decision_ms, csi };
+  return { period: label, total: rows.length, prompted, reviewed, rubber_stamped, bypassed: auto, rubber_stamp_pct, avg_decision_ms, csi };
 }
 
 function render(stats: PeriodStat[], format: Format, period: Period): string {
@@ -93,9 +93,9 @@ function renderJson(stats: PeriodStat[]): string {
 }
 
 function renderCsv(stats: PeriodStat[]): string {
-  const header = 'period,total,prompted,reviewed,surrendered,auto_approved,surrender_pct,avg_decision_ms,csi';
+  const header = 'period,total,prompted,reviewed,rubber_stamped,bypassed,rubber_stamp_pct,avg_decision_ms,csi';
   const rows = stats.map(s =>
-    `${s.period},${s.total},${s.prompted},${s.reviewed},${s.surrendered},${s.auto_approved},${s.surrender_pct},${s.avg_decision_ms ?? ''},${s.csi}`
+    `${s.period},${s.total},${s.prompted},${s.reviewed},${s.rubber_stamped},${s.bypassed},${s.rubber_stamp_pct},${s.avg_decision_ms ?? ''},${s.csi}`
   );
   return [header, ...rows].join('\n') + '\n';
 }
@@ -105,14 +105,14 @@ function renderMarkdown(stats: PeriodStat[], period: Period): string {
   const lines: string[] = [
     `# Cognitive Surrender — ${title}`,
     '',
-    `| Period | Total | Prompted | Reviewed | Surrendered | Auto | Surrender% | Avg Time | CSI |`,
-    `|--------|------:|---------:|---------:|------------:|-----:|-----------:|---------:|----:|`,
+    `| Period | Total | Prompted | Reviewed | Rubber-Stamped | Bypassed | Rubber-Stamp% | Avg Time | CSI |`,
+    `|--------|------:|---------:|---------:|---------------:|---------:|--------------:|---------:|----:|`,
   ];
 
   for (const s of stats) {
     const avg = s.avg_decision_ms !== null ? `${(s.avg_decision_ms / 1000).toFixed(1)}s` : '—';
     lines.push(
-      `| ${s.period} | ${s.total} | ${s.prompted} | ${s.reviewed} | ${s.surrendered} | ${s.auto_approved} | ${s.surrender_pct}% | ${avg} | ${s.csi} |`
+      `| ${s.period} | ${s.total} | ${s.prompted} | ${s.reviewed} | ${s.rubber_stamped} | ${s.bypassed} | ${s.rubber_stamp_pct}% | ${avg} | ${s.csi} |`
     );
   }
 

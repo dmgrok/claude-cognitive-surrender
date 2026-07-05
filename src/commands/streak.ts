@@ -15,7 +15,7 @@ export function streakCommand() {
     return;
   }
 
-  // Current streak: consecutive surrendered/auto_approved from most recent
+  // Current streak: consecutive rubber_stamped/bypassed from most recent
   let currentStreak = 0;
   for (const d of decisions) {
     if (d.verdict === 'reviewed') break;

@@ -7,7 +7,7 @@ const STATUS_CACHE_PATH = join(homedir(), '.cognitive-surrender', 'status.json')
 function summarize(counts: Record<string, number>): { reviewed: number; surrendered: number; auto: number; prompted: number; surrenderPct: number } {
   const reviewed = counts['reviewed'] ?? 0;
   const surrendered = counts['surrendered'] ?? 0;
-  const auto = counts['auto_approved'] ?? 0;
+  const auto = counts['bypassed'] ?? 0;
   const prompted = reviewed + surrendered;
   const surrenderPct = prompted > 0 ? Math.round((surrendered / prompted) * 100) : 0;
   return { reviewed, surrendered, auto, prompted, surrenderPct };

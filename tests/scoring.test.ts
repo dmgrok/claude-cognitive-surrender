@@ -4,7 +4,7 @@ import type { Decision } from '../src/db.js';
 
 describe('computeComplexity', () => {
   it('assigns high weight to Bash', () => {
-    expect(computeComplexity('Bash', 'ls')).toBeCloseTo(0.7, 1);
+    expect(computeComplexity('Bash', 'ls')).toBeCloseTo(0.85, 1);
   });
 
   it('scales up for long inputs', () => {
@@ -34,14 +34,14 @@ describe('getThresholdMs', () => {
 });
 
 describe('classifyVerdict', () => {
-  it('returns auto_approved for null decision time', () => {
-    expect(classifyVerdict(null, 0.5)).toBe('auto_approved');
+  it('returns bypassed for null decision time', () => {
+    expect(classifyVerdict(null, 0.5)).toBe('bypassed');
   });
 
-  it('returns surrendered when under threshold', () => {
+  it('returns rubber_stamped when under threshold', () => {
     const complexity = 0.5;
     const threshold = getThresholdMs(complexity);
-    expect(classifyVerdict(threshold - 1, complexity)).toBe('surrendered');
+    expect(classifyVerdict(threshold - 1, complexity)).toBe('rubber_stamped');
   });
 
   it('returns reviewed when at or above threshold', () => {
@@ -61,17 +61,17 @@ describe('calculateCSI', () => {
       id: 1, session_id: 's1', timestamp_ms: Date.now(),
       tool_name: 'Bash', tool_input_summary: 'ls', input_length: 2,
       decision_time_ms: null, complexity: 0.7, threshold_ms: 4500,
-      verdict: 'auto_approved', user: 'test', cwd: null,
+      verdict: 'bypassed', user: 'test', cwd: null,
     }];
     expect(calculateCSI(decisions)).toBe(0);
   });
 
-  it('returns 100 for all surrendered decisions', () => {
+  it('returns 100 for all rubber_stamped decisions', () => {
     const decisions: Decision[] = Array.from({ length: 5 }, (_, i) => ({
       id: i, session_id: 's1', timestamp_ms: Date.now() - i * 1000,
       tool_name: 'Bash', tool_input_summary: 'rm -rf', input_length: 6,
       decision_time_ms: 500, complexity: 0.7, threshold_ms: 4500,
-      verdict: 'surrendered' as const, user: 'test', cwd: null,
+      verdict: 'rubber_stamped' as const, user: 'test', cwd: null,
     }));
     expect(calculateCSI(decisions)).toBe(100);
   });

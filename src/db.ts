@@ -56,10 +56,17 @@ export function openDb(): Database.Database {
   db.pragma('journal_mode = WAL');
   db.pragma('synchronous = NORMAL');
   db.exec(SCHEMA);
+  migrateVerdicts(db);
   return db;
 }
 
-export type Verdict = 'reviewed' | 'surrendered' | 'auto_approved';
+// Rename old verdict values to new clearer names (idempotent).
+function migrateVerdicts(db: Database.Database): void {
+  db.prepare(`UPDATE decisions SET verdict = 'rubber_stamped' WHERE verdict = 'surrendered'`).run();
+  db.prepare(`UPDATE decisions SET verdict = 'bypassed'       WHERE verdict = 'auto_approved'`).run();
+}
+
+export type Verdict = 'reviewed' | 'rubber_stamped' | 'bypassed';
 
 export interface Event {
   id: number;

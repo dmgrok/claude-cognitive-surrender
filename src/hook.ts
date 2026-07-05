@@ -115,7 +115,7 @@ async function main() {
 
     if (pending) {
       const decisionTimeMs = now - pending.timestamp_ms;
-      const verdict = decisionTimeMs >= threshold ? 'reviewed' : 'surrendered';
+      const verdict = decisionTimeMs >= threshold ? 'reviewed' : 'rubber_stamped';
 
       db.prepare('UPDATE events SET matched = 1 WHERE id = ?').run(pending.id);
       db.prepare(`
@@ -129,7 +129,7 @@ async function main() {
       db.prepare(`
         INSERT INTO decisions (session_id, timestamp_ms, tool_name, tool_input_summary,
           input_length, decision_time_ms, complexity, threshold_ms, verdict, user, cwd)
-        VALUES (?, ?, ?, ?, ?, NULL, ?, ?, 'auto_approved', ?, ?)
+        VALUES (?, ?, ?, ?, ?, NULL, ?, ?, 'bypassed', ?, ?)
       `).run(sessionId, now, toolName, inputSummary, inputStr.length,
              complexity, threshold, user, cwd);
     }
