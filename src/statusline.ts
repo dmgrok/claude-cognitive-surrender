@@ -1,45 +1,29 @@
-// Statusline script for Claude Code — queries the DB and outputs a single line.
-// Called after each assistant message with JSON on stdin (ignored, we just query the DB).
-import Database from 'better-sqlite3';
-import { existsSync } from 'fs';
+// Statusline script for Claude Code — reads the pre-computed status cache written
+// by hook.ts after every decision, so counts are always current.
+import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 
-const DB_PATH = join(homedir(), '.cognitive-surrender', 'data.db');
-
-interface Row { verdict: string; count: number }
+const DATA_DIR = join(homedir(), '.cognitive-surrender');
+const STATUS_CACHE_PATH = join(DATA_DIR, 'status.json');
 
 function main() {
-  // Read stdin (required, but we don't use the Claude context data)
-  let _input = '';
+  // Drain stdin (Claude Code requires it)
   process.stdin.resume();
-  process.stdin.on('data', (d) => { _input += d; });
+  process.stdin.on('data', () => {});
   process.stdin.on('end', () => {
-    if (!existsSync(DB_PATH)) {
-      process.stdout.write('cs: no data — run "cs install"\n');
+    if (!existsSync(STATUS_CACHE_PATH)) {
+      process.stdout.write('cs: no data yet\n');
       process.exit(0);
     }
 
-    let db: Database.Database;
+    let counts: Record<string, number> = {};
     try {
-      db = new Database(DB_PATH, { readonly: true });
+      const parsed = JSON.parse(readFileSync(STATUS_CACHE_PATH, 'utf8'));
+      counts = parsed.counts ?? {};
     } catch {
       process.exit(0);
     }
-
-    const since = Date.now() - 24 * 60 * 60 * 1000; // last 24h
-
-    const rows = db.prepare(`
-      SELECT verdict, COUNT(*) as count
-      FROM decisions
-      WHERE timestamp_ms >= ?
-      GROUP BY verdict
-    `).all(since) as Row[];
-
-    db.close();
-
-    const counts: Record<string, number> = {};
-    for (const r of rows) counts[r.verdict] = r.count;
 
     const reviewed = counts['reviewed'] ?? 0;
     const surrendered = counts['surrendered'] ?? 0;
@@ -54,7 +38,7 @@ function main() {
 
     const surrenderPct = prompted > 0 ? Math.round((surrendered / prompted) * 100) : 0;
 
-    // Traffic light: green if <30% surrender, yellow if <60%, red otherwise
+    // Traffic light: green <30%, yellow <60%, red ≥60%
     const dot = surrenderPct < 30 ? '●' : surrenderPct < 60 ? '◐' : '○';
 
     process.stdout.write(

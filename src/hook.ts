@@ -4,8 +4,10 @@ import { createHash } from 'crypto';
 import { execSync } from 'child_process';
 import { homedir } from 'os';
 import { join } from 'path';
-import { mkdirSync, existsSync } from 'fs';
+import { mkdirSync, existsSync, writeFileSync } from 'fs';
 import Database from 'better-sqlite3';
+
+const STATUS_CACHE_PATH = join(homedir(), '.cognitive-surrender', 'status.json');
 
 const DATA_DIR = join(homedir(), '.cognitive-surrender');
 const DB_PATH = join(DATA_DIR, 'data.db');
@@ -133,6 +135,21 @@ async function main() {
     }
   }
   // PostToolUse: no action needed for now (reserved for future duration tracking)
+
+  // After every PreToolUse decision, refresh the status cache so the statusline
+  // always shows current counts without re-querying SQLite.
+  if (event === 'PreToolUse') {
+    try {
+      const since = now - 24 * 60 * 60 * 1000;
+      const rows = db.prepare(`
+        SELECT verdict, COUNT(*) as count FROM decisions
+        WHERE timestamp_ms >= ? GROUP BY verdict
+      `).all(since) as Array<{ verdict: string; count: number }>;
+      const counts: Record<string, number> = {};
+      for (const r of rows) counts[r.verdict] = r.count;
+      writeFileSync(STATUS_CACHE_PATH, JSON.stringify({ counts, updatedAt: now }));
+    } catch { /* non-fatal */ }
+  }
 
   db.close();
 }
