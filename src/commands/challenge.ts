@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import { readDecisions } from '../storage.js';
 import { calculateCSI } from '../scoring.js';
 import { getProvocation } from '../provocations.js';
+import { box, highlightNumbers } from '../render.js';
 
 export function challengeCommand(days: number) {
   const decisions = readDecisions({ days });
@@ -42,36 +43,16 @@ export function challengeCommand(days: number) {
     avgDecisionTime: avgTime,
   });
 
-  const width = 65;
-  const border = '─'.repeat(width);
-  console.log('');
-  console.log(`  ┌${border}┐`);
-  console.log(`  │${' '.repeat(width)}│`);
-  for (const line of provocation.split('\n')) {
-    for (const chunk of wrapLine(line, width - 2)) {
-      const pad = width - 2 - chunk.length;
-      console.log(`  │ ${chunk}${' '.repeat(pad)} │`);
-    }
-  }
-  console.log(`  │${' '.repeat(width)}│`);
-  console.log(`  └${border}┘`);
-  console.log('');
-}
+  const header = chalk.bold.hex('#f59e0b')('⚠  DAILY CHALLENGE');
+  const headerSep = chalk.dim('─'.repeat(63));
 
-function wrapLine(line: string, maxWidth: number): string[] {
-  if (line.length === 0) return [''];
-  if (line.length <= maxWidth) return [line];
-  const words = line.split(' ');
-  const lines: string[] = [];
-  let current = '';
-  for (const word of words) {
-    if (current.length + word.length + (current ? 1 : 0) > maxWidth) {
-      if (current) lines.push(current);
-      current = word;
-    } else {
-      current = current ? `${current} ${word}` : word;
-    }
-  }
-  if (current) lines.push(current);
-  return lines;
+  const contentLines: string[] = [
+    header,
+    headerSep,
+    ...provocation.split('\n').map(line => highlightNumbers(line)),
+  ];
+
+  console.log('');
+  console.log(box(contentLines, { style: 'double', gradientBorder: true, width: 65 }));
+  console.log('');
 }
