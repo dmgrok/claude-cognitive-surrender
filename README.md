@@ -27,6 +27,8 @@ cs uninstall          # Remove hooks from settings.json
 
 Output uses gradient bars, sparklines, and flame indicators — no extra dependencies, chalk only.
 
+![cs stats dashboard](dashboard.png)
+
 ## How it works
 
 Three categories of tool call, measured differently:
