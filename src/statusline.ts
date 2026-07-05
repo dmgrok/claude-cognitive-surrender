@@ -48,13 +48,14 @@ function main() {
       process.exit(0);
     }
 
-    // Session line (only show if there's data)
+    const fmt = (s: ReturnType<typeof summarize>) =>
+      `${s.reviewed} reviewed · ${s.surrendered} stamped · ${s.auto} auto (${s.surrenderPct}%)`;
+
     const sessLine = sessTotal > 0
-      ? `${dot(sess.surrenderPct)} session ${sess.reviewed}/${sess.prompted} reviewed  ${sess.auto} auto`
+      ? `${dot(sess.surrenderPct)} session ${fmt(sess)}`
       : null;
 
-    // Day line
-    const dayLine = `${dot(day.surrenderPct)} today ${day.reviewed}/${day.prompted} reviewed  ${day.auto} auto  (${day.surrenderPct}% surrender)`;
+    const dayLine = `${dot(day.surrenderPct)} today ${fmt(day)}`;
 
     process.stdout.write(sessLine ? `${sessLine}  │  ${dayLine}\n` : `${dayLine}\n`);
     process.exit(0);

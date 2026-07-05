@@ -29,6 +29,16 @@ export function statsCommand(days: number) {
   console.log(`  ${chalk.dim(`"${label}"`)}`);
   console.log('');
 
+  const totalBypassed = decisions.filter(d => d.verdict === 'bypassed').length;
+  const totalRubberStamped = decisions.filter(d => d.verdict === 'rubber_stamped').length;
+  const totalReviewed = decisions.filter(d => d.verdict === 'reviewed').length;
+
+  console.log(`  ${chalk.bold(`– ${decisions.length} total tool calls`)}`);
+  console.log(`  – ${chalk.dim(`${totalBypassed} bypassed`)} ${chalk.dim('(auto-allowed by your rules)')}`);
+  console.log(`  – ${chalk.red(`${totalRubberStamped} rubber-stamped`)} ${chalk.dim('(approved without real review)')}`);
+  console.log(`  – ${chalk.green(`${totalReviewed} actually reviewed`)}`);
+  console.log('');
+
   const byTool = groupByTool(decisions);
   const header = ['Tool', 'Total', 'Reviewed', 'Rubber-Stamped', 'Bypassed', 'Avg Time'];
   const rows = byTool.map(s => [
@@ -43,8 +53,6 @@ export function statsCommand(days: number) {
   printTable(header, rows);
 
   const totalHuman = decisions.filter(d => d.verdict !== 'bypassed').length;
-  const totalRubberStamped = decisions.filter(d => d.verdict === 'rubber_stamped').length;
-  const totalBypassed = decisions.filter(d => d.verdict === 'bypassed').length;
   const humanTimes = decisions.filter(d => d.time_ms !== null).map(d => d.time_ms!);
   const avgTime = humanTimes.length > 0 ? humanTimes.reduce((a, b) => a + b, 0) / humanTimes.length : null;
   const maxTime = humanTimes.length > 0 ? Math.max(...humanTimes) : null;
