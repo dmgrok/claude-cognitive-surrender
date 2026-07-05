@@ -3,6 +3,7 @@ import { statsCommand } from './commands/stats.js';
 import { streakCommand } from './commands/streak.js';
 import { challengeCommand } from './commands/challenge.js';
 import { installCommand, uninstallCommand } from './commands/install.js';
+import { exportCommand } from './commands/export.js';
 
 const program = new Command();
 
@@ -32,6 +33,18 @@ program
   .option('-d, --days <n>', 'Number of days to look back', '1')
   .action((opts) => {
     challengeCommand(parseInt(opts.days, 10));
+  });
+
+program
+  .command('export')
+  .description('Export stats as CSV, JSON, or Markdown')
+  .option('-p, --period <period>', 'daily or monthly', 'daily')
+  .option('-f, --format <format>', 'csv, json, or md', 'md')
+  .option('-o, --output <file>', 'output file (defaults to stdout)')
+  .action((opts) => {
+    const period = opts.period === 'monthly' ? 'monthly' : 'daily';
+    const format = ['csv', 'json', 'md'].includes(opts.format) ? opts.format : 'md';
+    exportCommand(period, format, opts.output);
   });
 
 program
