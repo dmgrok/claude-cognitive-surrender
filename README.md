@@ -25,11 +25,13 @@ cs export             # Export stats as CSV, JSON, or Markdown
 cs uninstall          # Remove hooks from settings.json
 ```
 
+Output uses gradient bars, sparklines, and flame indicators — no extra dependencies, chalk only.
+
 ## How it works
 
 Three categories of tool call, measured differently:
 
-1. **Permission-prompted** — Claude Code shows you a `[y/n]` prompt. The time between the prompt appearing and your approval is your *decision time*. Under the threshold for that tool's complexity = rubber-stamped.
+1. **Permission-prompted** — Claude Code shows you a dialog. The time between the prompt appearing and your response is your *decision time*. Under the threshold for that tool's complexity = rubber-stamped. This covers both regular tools (`Bash`, `Edit`, `Write`) via `PermissionRequest` → `PreToolUse`, and meta-tools (`AskUserQuestion`, `ExitPlanMode`, `Skill`) via `PermissionRequest` → `PostToolUse`.
 2. **Bypassed by settings** — your `settings.json`, `settings.local.json`, or `managed-settings.json` auto-approved without asking. You were never prompted. Logged as bypassed, with attribution to the specific allow rule that matched.
 
 Stats show the full picture: *"Of 200 tool calls, 150 were bypassed. Of the 50 that asked you, you rubber-stamped 40."*

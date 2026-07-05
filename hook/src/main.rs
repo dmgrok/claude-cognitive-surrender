@@ -19,7 +19,7 @@ struct HookInput {
     cwd: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct PendingEvent {
     ts: i64,
     tool: String,
@@ -45,6 +45,7 @@ struct Decision {
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 struct StatusCache {
     day_counts: HashMap<String, u32>,
     session_counts: HashMap<String, u32>,
@@ -270,8 +271,18 @@ fn handle_permission_request(home: &Path, input: &HookInput, input_str: &str, no
     }
 }
 
+// Tools that only emit PermissionRequest + PostToolUse (no PreToolUse).
+// For these, PostToolUse is used as the completion signal instead of PreToolUse.
+fn is_meta_tool(tool: &str) -> bool {
+    matches!(tool, "AskUserQuestion" | "ExitPlanMode" | "Skill" | "EnterPlanMode")
+}
+
 fn handle_pre_tool_use(home: &Path, input: &HookInput, input_str: &str, now: i64, rules: &[(String, String)]) {
     let tool = input.tool_name.as_deref().unwrap_or("Unknown");
+
+    // Meta-tools don't get PreToolUse — their decisions are recorded by handle_post_tool_use.
+    if is_meta_tool(tool) { return; }
+
     let session_id = input.session_id.as_deref().unwrap_or("unknown");
     let hash = input_hash(input_str);
     let complexity = compute_complexity(tool, input_str);
@@ -321,30 +332,85 @@ fn handle_pre_tool_use(home: &Path, input: &HookInput, input_str: &str, now: i64
     update_status(home, session_id, &verdict);
 }
 
+fn handle_post_tool_use(home: &Path, input: &HookInput, input_str: &str, now: i64) {
+    let tool = input.tool_name.as_deref().unwrap_or("Unknown");
+
+    // Only handle meta-tools here; regular tools are handled by PreToolUse.
+    if !is_meta_tool(tool) { return; }
+
+    let session_id = input.session_id.as_deref().unwrap_or("unknown");
+    let hash = input_hash(input_str);
+    let complexity = compute_complexity(tool, input_str);
+    let thresh = threshold_ms(complexity);
+    let user = get_user();
+    let cwd = input.cwd.clone();
+
+    let pfile = pending_file(home, session_id);
+    let matched = find_and_remove_pending(&pfile, tool, &hash);
+
+    // Meta-tools are never auto-bypassed — if there's no pending event, skip recording.
+    // (Means the hook missed the PermissionRequest, e.g. hook wasn't running yet.)
+    let Some(pending) = matched else { return };
+
+    let delta = now - pending.ts;
+    let verdict = if delta >= thresh { "reviewed" } else { "rubber_stamped" };
+
+    let decision = Decision {
+        ts: now,
+        sid: session_id.to_string(),
+        tool: tool.to_string(),
+        summary: input_summary(input_str),
+        len: input_str.len(),
+        time_ms: Some(delta),
+        complexity,
+        threshold_ms: thresh,
+        verdict: verdict.to_string(),
+        user,
+        cwd,
+        bypass_rule: None,
+    };
+
+    let ddir = decisions_dir(home);
+    let _ = fs::create_dir_all(&ddir);
+    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(decisions_file(home)) {
+        if let Ok(line) = serde_json::to_string(&decision) {
+            let _ = writeln!(f, "{}", line);
+        }
+    }
+
+    update_status(home, session_id, verdict);
+}
+
+const PENDING_TTL_MS: i64 = 30 * 60 * 1000; // 30 minutes
+
 fn find_and_remove_pending(pfile: &Path, tool: &str, hash: &str) -> Option<PendingEvent> {
     if !pfile.exists() { return None; }
 
     let content = fs::read_to_string(pfile).ok()?;
-    let lines: Vec<&str> = content.lines().collect();
+    let now = Utc::now().timestamp_millis();
 
-    // Find the most recent matching unmatched event
-    let mut match_idx = None;
-    for (i, line) in lines.iter().enumerate().rev() {
-        if let Ok(ev) = serde_json::from_str::<PendingEvent>(line) {
-            if ev.tool == tool && ev.input_hash == hash {
-                match_idx = Some(i);
-                break;
-            }
-        }
-    }
+    // Parse all lines, dropping malformed and expired entries
+    let parsed: Vec<(usize, PendingEvent)> = content.lines().enumerate()
+        .filter_map(|(i, line)| {
+            let ev: PendingEvent = serde_json::from_str(line).ok()?;
+            if now - ev.ts > PENDING_TTL_MS { return None; } // expired
+            Some((i, ev))
+        })
+        .collect();
 
-    let idx = match_idx?;
-    let matched: PendingEvent = serde_json::from_str(lines[idx]).ok()?;
+    // Find the most recent matching event among the live ones
+    let match_idx = parsed.iter().rev()
+        .find(|(_, ev)| ev.tool == tool && ev.input_hash == hash)
+        .map(|(i, _)| *i);
 
-    // Rewrite file without the matched line
-    let remaining: Vec<&str> = lines.iter().enumerate()
-        .filter(|(i, _)| *i != idx)
-        .map(|(_, l)| *l)
+    let matched_orig_idx = match_idx?;
+    let matched = parsed.iter().find(|(i, _)| *i == matched_orig_idx)
+        .map(|(_, ev)| ev.clone())?;
+
+    // Rewrite file: keep live entries except the matched one
+    let remaining: Vec<String> = parsed.iter()
+        .filter(|(i, _)| *i != matched_orig_idx)
+        .map(|(_, ev)| serde_json::to_string(ev).unwrap_or_default())
         .collect();
 
     if remaining.is_empty() {
@@ -379,8 +445,6 @@ fn main() {
         return;
     }
 
-    if event == "PostToolUse" { return; }
-
     let now = Utc::now().timestamp_millis();
 
     // Flatten tool_input to a string
@@ -390,7 +454,7 @@ fn main() {
         None => String::new(),
     };
 
-    // Load allow rules once
+    // Load allow rules once (not needed for PostToolUse but cheap)
     let rules = load_allow_rules(&home);
 
     // Ensure base dirs exist
@@ -399,6 +463,7 @@ fn main() {
     match event {
         "PermissionRequest" => handle_permission_request(&home, &input, &input_str, now),
         "PreToolUse" => handle_pre_tool_use(&home, &input, &input_str, now, &rules),
+        "PostToolUse" => handle_post_tool_use(&home, &input, &input_str, now),
         _ => {}
     }
 }
