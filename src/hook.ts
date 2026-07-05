@@ -141,13 +141,28 @@ async function main() {
   if (event === 'PreToolUse') {
     try {
       const since = now - 24 * 60 * 60 * 1000;
-      const rows = db.prepare(`
+
+      const dayRows = db.prepare(`
         SELECT verdict, COUNT(*) as count FROM decisions
         WHERE timestamp_ms >= ? GROUP BY verdict
       `).all(since) as Array<{ verdict: string; count: number }>;
-      const counts: Record<string, number> = {};
-      for (const r of rows) counts[r.verdict] = r.count;
-      writeFileSync(STATUS_CACHE_PATH, JSON.stringify({ counts, updatedAt: now }));
+
+      const sessionRows = db.prepare(`
+        SELECT verdict, COUNT(*) as count FROM decisions
+        WHERE session_id = ? GROUP BY verdict
+      `).all(sessionId) as Array<{ verdict: string; count: number }>;
+
+      const dayCounts: Record<string, number> = {};
+      for (const r of dayRows) dayCounts[r.verdict] = r.count;
+
+      const sessionCounts: Record<string, number> = {};
+      for (const r of sessionRows) sessionCounts[r.verdict] = r.count;
+
+      writeFileSync(STATUS_CACHE_PATH, JSON.stringify({
+        dayCounts,
+        sessionCounts,
+        updatedAt: now,
+      }));
     } catch { /* non-fatal */ }
   }
 
