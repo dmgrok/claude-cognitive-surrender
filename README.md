@@ -2,16 +2,17 @@
 
 > *Are you reviewing Claude Code's tool calls, or just pressing [y]?*
 
-A CLI tool that hooks into Claude Code and measures how quickly you approve permission prompts. It classifies each approval as **reviewed**, **surrendered** (approved too fast), or **auto-approved** (settings bypassed the prompt entirely). The goal isn't to shame — it's to surface data that sparks honest conversations about whether human review adds value in AI-assisted workflows.
+A CLI tool that hooks into Claude Code and measures how quickly you approve permission prompts. It classifies each approval as **reviewed**, **rubber-stamped** (approved too fast), or **bypassed** (settings skipped the prompt entirely). The goal isn't to shame — it's to surface data that sparks honest conversations about whether human review adds value in AI-assisted workflows.
 
 ## Install
 
 ```bash
 npm install -g cognitive-surrender
+cd $(npm root -g)/cognitive-surrender/hook && cargo build --release
 cs install      # adds hooks to ~/.claude/settings.json
 ```
 
-Restart Claude Code. The hooks fire silently on every tool call.
+Requires Node.js >= 22 and a Rust toolchain. Restart Claude Code after installing — the hooks fire silently on every tool call.
 
 ## Commands
 
@@ -20,6 +21,7 @@ cs stats              # Surrender rate and tool breakdown (last 7 days)
 cs stats --days 30    # Longer window
 cs streak             # Current and longest rubber-stamp streak
 cs challenge          # Provocative summary of today's approvals
+cs export             # Export stats as CSV, JSON, or Markdown
 cs uninstall          # Remove hooks from settings.json
 ```
 
@@ -27,26 +29,25 @@ cs uninstall          # Remove hooks from settings.json
 
 Three categories of tool call, measured differently:
 
-1. **Permission-prompted** — Claude Code shows you a `[y/n]` prompt. The time between the prompt appearing and your approval is your *decision time*. Under the threshold for that tool's complexity = surrendered.
-2. **Auto-approved by settings** — your `settings.json` or an existing hook auto-approved. You were never asked. Logged as auto-approved.
-3. **Auto-approved by hook** — same as above, just via a different mechanism.
+1. **Permission-prompted** — Claude Code shows you a `[y/n]` prompt. The time between the prompt appearing and your approval is your *decision time*. Under the threshold for that tool's complexity = rubber-stamped.
+2. **Bypassed by settings** — your `settings.json`, `settings.local.json`, or `managed-settings.json` auto-approved without asking. You were never prompted. Logged as bypassed, with attribution to the specific allow rule that matched.
 
-Stats show the full picture: *"Of 200 tool calls, 150 were auto-approved. Of the 50 that asked you, you rubber-stamped 40."*
+Stats show the full picture: *"Of 200 tool calls, 150 were bypassed. Of the 50 that asked you, you rubber-stamped 40."*
 
 ## Scoring
 
 **Complexity** is computed per tool call:
-- Tool type: `Bash` (0.7), `Write` (0.6), `Edit` (0.5), `Read` (0.1)
-- Input length: +0.15 for >500 chars, +0.1 for >2000
-- Code content: +0.1 if the input looks like code
+- Tool type: `Bash` (0.85), `Write` (0.75), `MultiEdit` (0.70), `Edit` (0.65), `Read` (0.10), `Glob/Grep/LS` (0.05)
+- Input length: +0.10 for >500 chars, +0.10 for >2000
+- Code content: +0.05 if the input contains code keywords
 
 **Threshold** = `1000ms + (complexity × 5000ms)` — the minimum time you'd need to actually read what you're approving.
 
-**Cognitive Surrender Index (CSI)** = weighted surrender rate (0–100). Recent decisions and complex approvals weigh more. 100 = total autopilot.
+**Cognitive Surrender Index (CSI)** = weighted rubber-stamp rate (0–100). Recent decisions and complex approvals weigh more. 100 = total autopilot.
 
 ## Data
 
-Stored locally in `~/.cognitive-surrender/data.db` (SQLite). Nothing leaves your machine.
+Stored locally in `~/.cognitive-surrender/decisions/YYYY-MM-DD.jsonl`. One file per day, one JSON object per line. Nothing leaves your machine.
 
 ## The point
 
