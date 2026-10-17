@@ -90,3 +90,7 @@ npm run build                  # tsup bundle into dist/
 This tool doesn't answer whether rubber-stamping is *bad*. Maybe you trust the model. Maybe low-risk auto-approvals are fine. Maybe you're faster at reviewing than you think. The data lets you have that conversation with your team from a factual baseline instead of a vibe.
 
 The question worth asking: *are you slowing things down, or catching things others would miss?*
+
+## License
+
+[MIT](LICENSE)

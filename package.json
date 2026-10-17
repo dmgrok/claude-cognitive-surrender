@@ -1,6 +1,7 @@
 {
   "name": "cognitive-surrender",
   "version": "0.1.0",
+  "license": "MIT",
   "description": "Measure how quickly you rubber-stamp Claude Code permission prompts",
   "type": "module",
   "bin": {
