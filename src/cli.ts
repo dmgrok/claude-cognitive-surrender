@@ -50,7 +50,7 @@ program
 program
   .command('install')
   .description('Add cognitive-surrender hooks to ~/.claude/settings.json')
-  .option('--hook-path <path>', 'Path to hook.js (auto-detected by default)')
+  .option('--hook-path <path>', 'Path to the cs-hook binary (default: hook/target/release/cs-hook)')
   .action((opts) => {
     installCommand(opts.hookPath ?? '');
   });

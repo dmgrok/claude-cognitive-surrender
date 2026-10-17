@@ -1,18 +1,31 @@
 # Cognitive Surrender
 
+[![CI](https://github.com/dmgrok/claude-cognitive-surrender/actions/workflows/ci.yml/badge.svg)](https://github.com/dmgrok/claude-cognitive-surrender/actions/workflows/ci.yml)
+
 > *Are you reviewing Claude Code's tool calls, or just pressing [y]?*
+
+> [!NOTE]
+> **Experimental.** This is a research prototype, not a supported product. It is not published to npm, it relies on Claude Code hook behaviour that may change between releases, and the timing thresholds are heuristics rather than validated measures.
 
 A CLI tool that hooks into Claude Code and measures how quickly you approve permission prompts. It classifies each approval as **reviewed**, **rubber-stamped** (approved too fast), or **bypassed** (settings skipped the prompt entirely). The goal isn't to shame — it's to surface data that sparks honest conversations about whether human review adds value in AI-assisted workflows.
 
 ## Install
 
+Install from source. Requires Node.js >= 22 and a Rust toolchain ([rustup](https://rustup.rs)).
+
 ```bash
-npm install -g cognitive-surrender
-cd $(npm root -g)/cognitive-surrender/hook && cargo build --release
-cs install      # adds hooks to ~/.claude/settings.json
+git clone https://github.com/dmgrok/claude-cognitive-surrender.git
+cd claude-cognitive-surrender
+npm ci
+npm run build                          # builds dist/cli.js and dist/statusline.cjs
+(cd hook && cargo build --release)     # builds hook/target/release/cs-hook
+npm link                               # puts `cs` and `cognitive-surrender` on your PATH
+cs install                             # adds hooks and the status line to ~/.claude/settings.json
 ```
 
-Requires Node.js >= 22 and a Rust toolchain. Restart Claude Code after installing — the hooks fire silently on every tool call.
+Without `npm link`, run `node dist/cli.js install` instead. `cs install` registers absolute paths to the clone, so keep it in place, and it replaces any existing `statusLine` entry in `~/.claude/settings.json`. Restart Claude Code after installing — the hooks fire silently on every tool call.
+
+To remove: `cs uninstall`, then `npm unlink -g cognitive-surrender`.
 
 ## Commands
 
@@ -31,7 +44,7 @@ Output uses gradient bars, sparklines, and flame indicators — no extra depende
 
 ## How it works
 
-Three categories of tool call, measured differently:
+Two categories of tool call, measured differently:
 
 1. **Permission-prompted** — Claude Code shows you a dialog. The time between the prompt appearing and your response is your *decision time*. Under the threshold for that tool's complexity = rubber-stamped. This covers both regular tools (`Bash`, `Edit`, `Write`) via `PermissionRequest` → `PreToolUse`, and meta-tools (`AskUserQuestion`, `ExitPlanMode`, `Skill`) via `PermissionRequest` → `PostToolUse`.
 2. **Bypassed by settings** — your `settings.json`, `settings.local.json`, or `managed-settings.json` auto-approved without asking. You were never prompted. Logged as bypassed, with attribution to the specific allow rule that matched.
@@ -62,6 +75,15 @@ The **surrender rate** counts bypasses as surrender — `(rubber_stamped + bypas
 ## Data
 
 Stored locally in `~/.cognitive-surrender/decisions/YYYY-MM-DD.jsonl`. One file per day, one JSON object per line. Nothing leaves your machine.
+
+## Development
+
+```bash
+npm ci
+npm test                       # vitest unit tests (scoring)
+npm run build                  # tsup bundle into dist/
+(cd hook && cargo test)        # Rust hook
+```
 
 ## The point
 
